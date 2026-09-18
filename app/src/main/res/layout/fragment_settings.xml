@@ -559,6 +559,30 @@
                             android:onClick="@{() -> viewModel.setDownloadsFolderHiddenSdCard()}"
                             android:paddingHorizontal="16dp"
                             android:text="@string/sd_app_folder" />
+
+                        <com.google.android.material.radiobutton.MaterialRadioButton
+                            android:id="@+id/option_custom_folder"
+                            android:layout_width="match_parent"
+                            android:layout_height="48dp"
+                            android:checked="@{viewModel.storageType == viewModel.storageType.CUSTOM}"
+                            android:onClick="@{() -> viewModel.requestCustomFolder()}"
+                            android:paddingHorizontal="16dp"
+                            android:text="@string/custom_folder" />
+
+                        <com.google.android.material.textview.MaterialTextView
+                            android:id="@+id/custom_folder_name"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="16dp"
+                            android:layout_marginEnd="16dp"
+                            android:layout_marginBottom="8dp"
+                            android:ellipsize="middle"
+                            android:singleLine="true"
+                            android:text="@{@string/custom_folder_selected(viewModel.customFolderName)}"
+                            android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+                            android:textColor="?attr/colorOnSurfaceVariant"
+                            android:visibility="@{viewModel.storageType == viewModel.storageType.CUSTOM &amp;&amp; viewModel.customFolderName != null ? View.VISIBLE : View.GONE}"
+                            tools:text="Selected: MyDownloads" />
                     </RadioGroup>
                 </com.google.android.material.card.MaterialCardView>
 

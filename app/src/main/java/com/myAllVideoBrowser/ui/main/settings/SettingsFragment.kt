@@ -2,11 +2,16 @@ package com.myAllVideoBrowser.ui.main.settings
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.provider.DocumentsContract
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Toast
 import androidx.activity.addCallback
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.databinding.Observable
@@ -49,6 +54,11 @@ class SettingsFragment : BaseFragment() {
     private lateinit var settingsViewModel: SettingsViewModel
 
     private var lastSavedRegularThreadsCount = -1
+
+    private val openDocumentTreeLauncher =
+        registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+            handleCustomFolderPicked(uri)
+        }
 
     private val regularThreadsListener = Slider.OnChangeListener { _, value, fromUser ->
         if (fromUser) {
@@ -167,13 +177,63 @@ class SettingsFragment : BaseFragment() {
             systemUtil.clearCookies(context)
         }
         settingsViewModel.openVideoFolderEvent.observe(viewLifecycleOwner) {
-            intentUtil.openVideoFolder(context, fileUtil.folderDir.path)
+            val customUri = FileUtil.CUSTOM_DOWNLOAD_URI
+            if (FileUtil.IS_CUSTOM_DIR_USE && customUri != null) {
+                openCustomFolderInFileManager(customUri)
+            } else {
+                intentUtil.openVideoFolder(context, fileUtil.folderDir.path)
+            }
         }
         settingsViewModel.openAdBlockSettingsEvent.observe(viewLifecycleOwner) {
             parentFragmentManager.beginTransaction()
                 .replace(R.id.fragment_container_view, AdBlockSettingsFragment.newInstance())
                 .addToBackStack(null)
                 .commit()
+        }
+        settingsViewModel.openCustomFolderPickerEvent.observe(viewLifecycleOwner) {
+            openDocumentTreeLauncher.launch(null)
+        }
+    }
+
+    private fun handleCustomFolderPicked(uri: Uri?) {
+        val context = context ?: return
+        if (uri == null) {
+            // User cancelled the picker; the "Custom folder" radio already toggled itself on
+            // click, so force a re-sync back to the previously selected storage option.
+            settingsViewModel.refreshStorageType()
+            return
+        }
+
+        try {
+            context.contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            )
+            settingsViewModel.setDownloadsFolderCustom(uri)
+        } catch (e: Throwable) {
+            Toast.makeText(
+                context,
+                R.string.custom_folder_permission_error,
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    private fun openCustomFolderInFileManager(uri: Uri) {
+        val context = context ?: return
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, DocumentsContract.Document.MIME_TYPE_DIR)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+
+        if (intent.resolveActivity(context.packageManager) != null) {
+            startActivity(intent)
+        } else {
+            Toast.makeText(
+                context,
+                R.string.settings_message_open_folder,
+                Toast.LENGTH_SHORT
+            ).show()
         }
     }
 

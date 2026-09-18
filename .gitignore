@@ -8,6 +8,10 @@ release/
 captures/*
 .externalNativeBuild
 /app/libs/libv2ray*
+/app/src/main/jniLibs/
+/keystore/
+*.jks
+*.keystore
 
 !rust_adblock/vendor/
 !rust_adblock/.cargo/

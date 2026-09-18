@@ -96,6 +96,9 @@
     <string name="downloads_folder">Downloads folder</string>
     <string name="hidden_folder">Hidden folder</string>
     <string name="sd_app_folder">SD app folder</string>
+    <string name="custom_folder">Custom folder…</string>
+    <string name="custom_folder_selected">Selected: %1$s</string>
+    <string name="custom_folder_permission_error">Could not access the selected folder</string>
     <string name="host_hint">Host</string>
     <string name="port_hint">Port</string>
     <string name="login_hint">User</string>

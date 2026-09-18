@@ -2,6 +2,7 @@ package com.myAllVideoBrowser
 
 import android.os.Build
 import android.webkit.CookieManager
+import androidx.core.net.toUri
 import androidx.webkit.WebViewCompat
 import androidx.work.Configuration
 import androidx.work.ExistingWorkPolicy
@@ -166,9 +167,26 @@ open class DLApplication : DaggerApplication(), Configuration.Provider {
     private fun initializeFileUtils() {
         val isExternal = sharedPrefHelper.getIsExternalUse()
         val isAppDir = sharedPrefHelper.getIsAppDirUse()
+        val isCustomDir = sharedPrefHelper.getIsCustomDirUse()
+        val customUriString = sharedPrefHelper.getCustomDownloadUri()
 
         FileUtil.IS_EXTERNAL_STORAGE_USE = isExternal
         FileUtil.IS_APP_DATA_DIR_USE = isAppDir
+
+        if (isCustomDir && customUriString != null) {
+            val customUri = customUriString.toUri()
+            val stillGranted = contentResolver.persistedUriPermissions.any {
+                it.uri == customUri && it.isWritePermission
+            }
+            if (stillGranted) {
+                FileUtil.IS_CUSTOM_DIR_USE = true
+                FileUtil.CUSTOM_DOWNLOAD_URI = customUri
+            } else {
+                AppLogger.e("Custom download folder permission lost, falling back to default")
+                sharedPrefHelper.setIsCustomDirUse(false)
+            }
+        }
+
         FileUtil.INITIIALIZED = true
     }
 

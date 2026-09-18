@@ -276,6 +276,7 @@ dependencies {
     implementation(libs.coreKtx)
     implementation(libs.coreSplashscreen)
     implementation(libs.legacySupportV4)
+    implementation(libs.documentfile)
 
     // should fix ssl crashes on old devices
     implementation(libs.conscrypt.android)

@@ -20,6 +20,7 @@ import android.widget.Toast
 import androidx.annotation.RequiresApi
 import androidx.core.net.toFile
 import androidx.core.net.toUri
+import androidx.documentfile.provider.DocumentFile
 import java.io.File
 import java.io.FileNotFoundException
 import java.io.RandomAccessFile
@@ -41,6 +42,11 @@ class FileUtil @Inject constructor() {
 
         // For downloads
         var IS_APP_DATA_DIR_USE = false
+
+        // For downloads: when true, files are moved into CUSTOM_DOWNLOAD_URI (a SAF tree)
+        // instead of folderDir, taking priority over IS_EXTERNAL_STORAGE_USE/IS_APP_DATA_DIR_USE
+        var IS_CUSTOM_DIR_USE = false
+        var CUSTOM_DOWNLOAD_URI: Uri? = null
 
         const val FOLDER_NAME = "SuperX"
         const val TMP_DATA_FOLDER_NAME = "superx_tmp_data"
@@ -146,28 +152,46 @@ class FileUtil @Inject constructor() {
             result.putAll(externalPrivateFilesObjs)
             result.putAll(internalPrivateFilesObjs)
 
+            if (IS_CUSTOM_DIR_USE) {
+                result.putAll(getCustomDirFilesObj(context))
+            }
+
             return result
 
         }
 
     fun isFreeSpaceAvailable(): Boolean {
+        if (IS_CUSTOM_DIR_USE && CUSTOM_DOWNLOAD_URI != null) {
+            // SAF tree providers don't expose free space reliably; assume available and let the
+            // write itself fail (surfaced to the user) if the destination is actually full.
+            return true
+        }
         return getFreeDiskSpace(folderDir) > FREE_SPACE_TRESHOLD
     }
 
     fun isFileWithNameNotExists(context: Context, uri: Uri, newName: String): Boolean {
-        return if (isFileApiSupportedByUri(context, uri)) {
-            !File(uri.toFile().parentFile, newName).exists()
-        } else {
-            if (Build.VERSION.SDK_INT == Build.VERSION_CODES.Q) {
-                !isDownloadedVideoContentExistsByName(context.contentResolver, uri, newName)
-            } else {
-                throw Exception("File api support ERROR")
+        return when {
+            isFileApiSupportedByUri(context, uri) -> !File(uri.toFile().parentFile, newName).exists()
+
+            isSafDocumentUri(context, uri) -> {
+                val treeUri = CUSTOM_DOWNLOAD_URI
+                val treeDoc = treeUri?.let { DocumentFile.fromTreeUri(context, it) }
+                treeDoc?.findFile(newName) == null
             }
+
+            Build.VERSION.SDK_INT == Build.VERSION_CODES.Q ->
+                !isDownloadedVideoContentExistsByName(context.contentResolver, uri, newName)
+
+            else -> throw Exception("File api support ERROR")
         }
     }
 
     @Synchronized
     fun moveMedia(context: Context, from: Uri, to: Uri): Boolean {
+        if (IS_CUSTOM_DIR_USE && CUSTOM_DOWNLOAD_URI != null) {
+            return moveMediaToCustomDir(context, from, to.toFile().name)
+        }
+
         val fromFile = from.toFile()
         val toFile = to.toFile()
 
@@ -217,6 +241,77 @@ class FileUtil @Inject constructor() {
         }
     }
 
+    private fun moveMediaToCustomDir(context: Context, from: Uri, fileName: String): Boolean {
+        val treeUri = CUSTOM_DOWNLOAD_URI ?: return false
+        val treeDoc = try {
+            DocumentFile.fromTreeUri(context, treeUri)
+        } catch (e: Throwable) {
+            AppLogger.e("Custom download folder unavailable: ${e.message}")
+            null
+        }
+
+        if (treeDoc == null || !treeDoc.canWrite()) {
+            AppLogger.e("Custom download folder not writable: $treeUri")
+            return false
+        }
+
+        val sourceFile = from.toFile()
+        val mimeType =
+            MimeTypeMap.getSingleton().getMimeTypeFromExtension(sourceFile.extension)
+                ?: "application/octet-stream"
+
+        val baseName = fileName.substringBeforeLast(".", fileName)
+        val extension = fileName.substringAfterLast(".", "")
+        var finalName = fileName
+        var counter = 1
+        while (treeDoc.findFile(finalName) != null) {
+            finalName =
+                if (extension.isNotEmpty()) "$baseName($counter).$extension" else "$fileName($counter)"
+            counter++
+        }
+
+        val newDoc = treeDoc.createFile(mimeType, finalName)
+        if (newDoc == null) {
+            AppLogger.e("Failed to create file in custom download folder: $finalName")
+            return false
+        }
+
+        return try {
+            val copied = context.contentResolver.openOutputStream(newDoc.uri)?.use { output ->
+                sourceFile.inputStream().use { input -> input.copyTo(output) }
+            }
+            if (copied == null) {
+                newDoc.delete()
+                false
+            } else {
+                sourceFile.delete()
+                true
+            }
+        } catch (e: Throwable) {
+            AppLogger.e("Failed copying to custom download folder: ${e.message}")
+            newDoc.delete()
+            false
+        }
+    }
+
+    private fun getCustomDirFilesObj(context: Context): Map<String, Pair<Long, Uri>> {
+        val treeUri = CUSTOM_DOWNLOAD_URI ?: return emptyMap()
+        val treeDoc = try {
+            DocumentFile.fromTreeUri(context, treeUri)
+        } catch (e: Throwable) {
+            null
+        } ?: return emptyMap()
+
+        val filesMap = mutableMapOf<String, Pair<Long, Uri>>()
+        for (doc in treeDoc.listFiles()) {
+            val name = doc.name
+            if (doc.isFile && name != null) {
+                filesMap[name] = Pair(doc.length(), doc.uri)
+            }
+        }
+        return filesMap
+    }
+
     private fun copyAndDeleteWithLock(sourceFile: File, targetFile: File): Boolean {
         return try {
             RandomAccessFile(sourceFile, "rw").use { raf ->
@@ -238,7 +333,11 @@ class FileUtil @Inject constructor() {
 
     fun renameMedia(context: Context, from: Uri, newName: String): Pair<String, Uri>? {
         try {
-            val originExtension = from.toFile().extension
+            val originExtension = if (isFileApiSupportedByUri(context, from)) {
+                from.toFile().extension
+            } else {
+                DocumentFile.fromSingleUri(context, from)?.name?.substringAfterLast('.', "") ?: ""
+            }
             val cleanedFileName = FileNameCleaner.cleanFileName(newName) + ".$originExtension"
             val isNewFileNotExists = isFileWithNameNotExists(context, from, newName)
 
@@ -317,12 +416,25 @@ class FileUtil @Inject constructor() {
     }
 
     fun isFileApiSupportedByUri(context: Context, uri: Uri): Boolean {
+        // SAF tree/document uris (our custom download folder, or anything else picked via
+        // ACTION_OPEN_DOCUMENT_TREE) are never backed by a plain java.io.File and must go
+        // through ContentResolver/DocumentsContract regardless of API level.
+        if (isSafDocumentUri(context, uri)) {
+            return false
+        }
+
         val isExternalTo = isExternalUri(uri)
 
         val privateDir = getPrivateDownloadsDir(context, isExternalTo)
         val isAppDir = uri.toString().startsWith(Uri.fromFile(privateDir).toString())
 
         return !(Build.VERSION.SDK_INT == Build.VERSION_CODES.Q && !isAppDir)
+    }
+
+    private fun isSafDocumentUri(context: Context, uri: Uri): Boolean {
+        return uri.scheme == ContentResolver.SCHEME_CONTENT &&
+                uri.authority != MediaStore.AUTHORITY &&
+                DocumentsContract.isDocumentUri(context, uri)
     }
 
     // WITHOUT LOCK EXISTS PROBABILITY OF CORRUPTED FILE AFTER renameTo()

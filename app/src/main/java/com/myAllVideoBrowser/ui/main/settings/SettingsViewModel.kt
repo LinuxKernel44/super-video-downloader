@@ -1,12 +1,15 @@
 package com.myAllVideoBrowser.ui.main.settings
 
+import android.net.Uri
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.databinding.ObservableBoolean
 import androidx.databinding.ObservableField
 import androidx.databinding.ObservableInt
+import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.viewModelScope
 //import com.allVideoDownloaderXmaster.OpenForTesting
 import com.myAllVideoBrowser.ui.main.base.BaseViewModel
+import com.myAllVideoBrowser.util.ContextUtils
 import com.myAllVideoBrowser.util.FileUtil
 import com.myAllVideoBrowser.util.SharedPrefHelper
 import com.myAllVideoBrowser.util.SingleLiveEvent
@@ -19,7 +22,7 @@ import javax.inject.Inject
 import kotlin.math.max
 
 enum class StorageType {
-    SD, HIDDEN, HIDDEN_SD
+    SD, HIDDEN, HIDDEN_SD, CUSTOM
 }
 
 //@OpenForTesting
@@ -32,10 +35,12 @@ class SettingsViewModel @Inject constructor(
     val m3u8ThreadsCount = ObservableInt(4)
     val videoDetectionTreshold = ObservableInt(4 * 1024 * 1024)
     val storageType = ObservableField(StorageType.SD)
+    val customFolderName = ObservableField<String?>(null)
 
     val clearCookiesEvent = SingleLiveEvent<Void?>()
     val openVideoFolderEvent = SingleLiveEvent<Void?>()
     val openAdBlockSettingsEvent = SingleLiveEvent<Unit?>()
+    val openCustomFolderPickerEvent = SingleLiveEvent<Void?>()
     val isDesktopMode = ObservableBoolean(false)
     val isDarkMode = ObservableBoolean(false)
     val isAutoDarkMode = ObservableBoolean(true)
@@ -84,12 +89,20 @@ class SettingsViewModel @Inject constructor(
 
             val isExternal = sharedPrefHelper.getIsExternalUse()
             val isAppDir = sharedPrefHelper.getIsAppDirUse()
-            val sType = if (isExternal && !isAppDir) {
+            val isCustomDir = sharedPrefHelper.getIsCustomDirUse() && FileUtil.CUSTOM_DOWNLOAD_URI != null
+            val sType = if (isCustomDir) {
+                StorageType.CUSTOM
+            } else if (isExternal && !isAppDir) {
                 StorageType.SD
             } else if (isAppDir && isExternal) {
                 StorageType.HIDDEN_SD
             } else {
                 StorageType.HIDDEN
+            }
+            val customName = if (isCustomDir) {
+                getCustomFolderDisplayName(FileUtil.CUSTOM_DOWNLOAD_URI)
+            } else {
+                null
             }
 
             withContext(Dispatchers.Main) {
@@ -116,6 +129,7 @@ class SettingsViewModel @Inject constructor(
                 isLockPortrait.set(lockPortrait)
                 isAskRedirection.set(askRedirection)
                 storageType.set(sType)
+                customFolderName.set(customName)
                 isAdBlockOn.set(adBlockOn)
                 isDownloadSubtitles.set(downloadSubtitles)
             }
@@ -371,33 +385,77 @@ class SettingsViewModel @Inject constructor(
     fun setDownloadsFolderSdCard() {
         FileUtil.IS_APP_DATA_DIR_USE = false
         FileUtil.IS_EXTERNAL_STORAGE_USE = true
+        disableCustomDir()
 
         storageType.set(StorageType.SD)
         viewModelScope.launch(Dispatchers.IO) {
             sharedPrefHelper.setIsExternalUse(true)
             sharedPrefHelper.setIsAppDirUse(false)
+            sharedPrefHelper.setIsCustomDirUse(false)
         }
     }
 
     fun setDownloadsFolderHidden() {
         FileUtil.IS_APP_DATA_DIR_USE = true
         FileUtil.IS_EXTERNAL_STORAGE_USE = false
+        disableCustomDir()
 
         storageType.set(StorageType.HIDDEN)
         viewModelScope.launch(Dispatchers.IO) {
             sharedPrefHelper.setIsExternalUse(false)
             sharedPrefHelper.setIsAppDirUse(true)
+            sharedPrefHelper.setIsCustomDirUse(false)
         }
     }
 
     fun setDownloadsFolderHiddenSdCard() {
         FileUtil.IS_APP_DATA_DIR_USE = true
         FileUtil.IS_EXTERNAL_STORAGE_USE = true
+        disableCustomDir()
 
         storageType.set(StorageType.HIDDEN_SD)
         viewModelScope.launch(Dispatchers.IO) {
             sharedPrefHelper.setIsExternalUse(true)
             sharedPrefHelper.setIsAppDirUse(true)
+            sharedPrefHelper.setIsCustomDirUse(false)
+        }
+    }
+
+    private fun disableCustomDir() {
+        FileUtil.IS_CUSTOM_DIR_USE = false
+        customFolderName.set(null)
+    }
+
+    fun requestCustomFolder() {
+        openCustomFolderPickerEvent.call()
+    }
+
+    // Re-syncs the storage radio group with the current state, e.g. after the user
+    // taps "Custom folder" (which visually checks it immediately) then cancels the picker.
+    fun refreshStorageType() {
+        storageType.notifyChange()
+    }
+
+    fun setDownloadsFolderCustom(uri: Uri) {
+        FileUtil.IS_CUSTOM_DIR_USE = true
+        FileUtil.CUSTOM_DOWNLOAD_URI = uri
+
+        storageType.set(StorageType.CUSTOM)
+        customFolderName.set(getCustomFolderDisplayName(uri))
+        viewModelScope.launch(Dispatchers.IO) {
+            sharedPrefHelper.setIsCustomDirUse(true)
+            sharedPrefHelper.setCustomDownloadUri(uri.toString())
+        }
+    }
+
+    private fun getCustomFolderDisplayName(uri: Uri?): String? {
+        if (uri == null) {
+            return null
+        }
+        return try {
+            DocumentFile.fromTreeUri(ContextUtils.getApplicationContext(), uri)?.name
+        } catch (_: Throwable) {
+            null
         }
     }
 

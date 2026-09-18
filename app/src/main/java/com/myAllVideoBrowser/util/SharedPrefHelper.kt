@@ -25,6 +25,8 @@ class SharedPrefHelper @Inject constructor(
         private const val IS_SHOW_VIDEO_ACTION_BUTTON = "IS_SHOW_VIDEO_ACTION_BUTTON"
         private const val IS_EXTERNAL_USE = "IS_EXTERNAL_USE"
         private const val IS_APP_DIR_USE = "IS_APP_DIR_USE"
+        private const val IS_CUSTOM_DIR_USE = "IS_CUSTOM_DIR_USE"
+        private const val CUSTOM_DOWNLOAD_URI = "CUSTOM_DOWNLOAD_URI"
         private const val IS_DARK_MODE = "IS_DARK_MODE"
         const val REGULAR_THREAD_COUNT = "REGULAR_THREAD_COUNT"
         private const val M3U8_THREAD_COUNT = "M3U8_THREAD_COUNT"
@@ -150,6 +152,26 @@ class SharedPrefHelper @Inject constructor(
     fun setIsAppDirUse(isAppDirUse: Boolean) {
         sharedPreferences.edit {
             putBoolean(IS_APP_DIR_USE, isAppDirUse)
+        }
+    }
+
+    fun getIsCustomDirUse(): Boolean {
+        return sharedPreferences.getBoolean(IS_CUSTOM_DIR_USE, false)
+    }
+
+    fun setIsCustomDirUse(isCustomDirUse: Boolean) {
+        sharedPreferences.edit {
+            putBoolean(IS_CUSTOM_DIR_USE, isCustomDirUse)
+        }
+    }
+
+    fun getCustomDownloadUri(): String? {
+        return sharedPreferences.getString(CUSTOM_DOWNLOAD_URI, null)
+    }
+
+    fun setCustomDownloadUri(uri: String?) {
+        sharedPreferences.edit {
+            putString(CUSTOM_DOWNLOAD_URI, uri)
         }
     }
 
