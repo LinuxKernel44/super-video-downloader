@@ -35,7 +35,7 @@ class SettingsViewModel @Inject constructor(
     val m3u8ThreadsCount = ObservableInt(4)
     val videoDetectionTreshold = ObservableInt(4 * 1024 * 1024)
     val storageType = ObservableField(StorageType.SD)
-    val customFolderName = ObservableField<String?>(null)
+    val customFolderName = ObservableField<String?>()
 
     val clearCookiesEvent = SingleLiveEvent<Void?>()
     val openVideoFolderEvent = SingleLiveEvent<Void?>()
