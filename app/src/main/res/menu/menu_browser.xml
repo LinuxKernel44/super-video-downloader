@@ -28,6 +28,12 @@
         app:showAsAction="ifRoom|collapseActionView" />
 
     <item
+        android:id="@+id/analyze_with_ytdlp"
+        android:icon="@drawable/search_24px"
+        android:title="@string/analyze_with_ytdlp"
+        app:showAsAction="ifRoom|collapseActionView" />
+
+    <item
         android:id="@+id/adblock_toggle"
         android:checkable="true"
         android:checked="true"

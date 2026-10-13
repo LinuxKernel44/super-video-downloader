@@ -37,6 +37,8 @@
     <string name="paste">paste</string>
     <string name="history">History</string>
     <string name="share_link">Share Link</string>
+    <string name="analyze_with_ytdlp">Analyze this page with yt-dlp</string>
+    <string name="analyze_with_ytdlp_started">Analyzing page with yt-dlp…</string>
     <string name="desktop_mode">Desktop Mode</string>
     <string name="searchbar_hint">Search</string>
     <string name="settings">Settings</string>

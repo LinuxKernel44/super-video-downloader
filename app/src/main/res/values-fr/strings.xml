@@ -29,6 +29,8 @@
     <string name="paste">Coller</string>
     <string name="history">Historique</string>
     <string name="share_link">Partager le lien</string>
+    <string name="analyze_with_ytdlp">Analyser cette page avec yt-dlp</string>
+    <string name="analyze_with_ytdlp_started">Analyse de la page avec yt-dlp…</string>
     <string name="desktop_mode">Mode Bureau</string>
     <string name="searchbar_hint">Rechercher</string>
     <string name="settings">Réglages</string>

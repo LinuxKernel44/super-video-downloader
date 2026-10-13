@@ -32,6 +32,7 @@ open class VideoServiceLocal(
         const val MP4_EXT = "mp4"
         private const val FACEBOOK_HOST = ".facebook."
         private const val COOKIE_HEADER = "Cookie"
+        private const val REFERER_HEADER = "Referer"
     }
 
     override fun getVideoInfo(
@@ -60,28 +61,13 @@ open class VideoServiceLocal(
     ): VideoInfoWrapper {
         val originalUrl =
             url.url.toString().replace(Regex("&feature=youtu.be|#bottom-sheet"), "").trim()
-        val request = YoutubeDLRequest(originalUrl)
-
-        request.addOption("--dump-json")
-
-        url.headers.forEach { (name, value) ->
-            if (name != COOKIE_HEADER) {
-                request.addOption("--add-header", "$name:${value}")
-            }
-        }
-
-        val currentProxy = proxyController.getCurrentRunningProxy()
-        if (currentProxy != Proxy.noProxy()) {
-            attachProxyToRequest(request, currentProxy)
-        }
-
-        val tmpCookieFile = CookieUtils.addCookiesToRequest(originalUrl, request)
-
         try {
-            val response = YoutubeDL.getInstance().execute(request)
-            val jsonStr = response.out
-
-            val json = JSONObject(jsonStr)
+            val json = try {
+                runYoutubeDl(url, originalUrl, forceGeneric = false)
+            } catch (e: Throwable) {
+                AppLogger.d("YoutubeDL default extractors failed, retrying with generic: $e")
+                runYoutubeDl(url, originalUrl, forceGeneric = true)
+            }
 
             val videoTitle = json.optString("title", "no title")
             val videoDuration = json.optLong("duration", 0L)
@@ -133,6 +119,31 @@ open class VideoServiceLocal(
                 }
             }
 
+            if (formats.isEmpty() && json.optString("url").isNotBlank()) {
+                // direct media link resolved by the generic extractor
+                formats.add(
+                    VideoFormatEntity(
+                        formatId = json.optString("format_id", "0"),
+                        format = json.optString("format", ""),
+                        formatNote = json.optString("format_note", ""),
+                        url = json.optString("url"),
+                        ext = videoExt,
+                        vcodec = json.optString("vcodec", "unknown"),
+                        acodec = json.optString("acodec", "unknown"),
+                        width = json.optInt("width", 0),
+                        height = json.optInt("height", 0),
+                        fps = json.optInt("fps", 0),
+                        asr = json.optDouble("asr", 0.0).toInt(),
+                        tbr = json.optDouble("tbr", 0.0).toInt(),
+                        abr = json.optDouble("abr", 0.0).toInt(),
+                        fileSize = json.optLong("filesize", 0L),
+                        duration = videoDuration * 1000,
+                        manifestUrl = json.optString("manifest_url"),
+                        httpHeaders = url.headers.toMap()
+                    )
+                )
+            }
+
             val filtered = if (originalUrl.contains(FACEBOOK_HOST)) {
                 formats.filter {
                     it.formatId?.lowercase(Locale.ROOT)?.contains(Regex("hd|sd")) == true
@@ -165,9 +176,70 @@ open class VideoServiceLocal(
             )
         } catch (e: Throwable) {
             throw e
+        }
+    }
+
+    /**
+     * Runs yt-dlp for [originalUrl] and returns the first extracted entry that has formats.
+     * With [forceGeneric] only the generic extractor is used, which is what lets yt-dlp
+     * work on sites it has no dedicated extractor for (embedded players, <video> tags,
+     * direct/HLS/DASH links found in the page).
+     */
+    private fun runYoutubeDl(url: Request, originalUrl: String, forceGeneric: Boolean): JSONObject {
+        val request = YoutubeDLRequest(originalUrl)
+
+        request.addOption("--dump-json")
+        // pages with several embeds would otherwise yield many JSON lines / playlists
+        request.addOption("--no-playlist")
+        request.addOption("--no-warnings")
+        if (forceGeneric) {
+            request.addOption("--force-generic-extractor")
+        }
+
+        url.headers.forEach { (name, value) ->
+            if (name != COOKIE_HEADER) {
+                request.addOption("--add-header", "$name:${value}")
+            }
+        }
+        // sites hosting players on other domains usually require the page as referer
+        if (url.header(REFERER_HEADER) == null) {
+            request.addOption("--add-header", "$REFERER_HEADER:$originalUrl")
+        }
+
+        val currentProxy = proxyController.getCurrentRunningProxy()
+        if (currentProxy != Proxy.noProxy()) {
+            attachProxyToRequest(request, currentProxy)
+        }
+
+        val tmpCookieFile = CookieUtils.addCookiesToRequest(originalUrl, request)
+        try {
+            val out = YoutubeDL.getInstance().execute(request).out
+            return parseFirstEntryWithFormats(out)
+                ?: throw IllegalStateException("yt-dlp returned no downloadable formats")
         } finally {
             tmpCookieFile.delete()
         }
+    }
+
+    private fun parseFirstEntryWithFormats(out: String): JSONObject? {
+        var first: JSONObject? = null
+        for (line in out.lineSequence()) {
+            val trimmed = line.trim()
+            if (!trimmed.startsWith("{")) continue
+            val obj = try {
+                JSONObject(trimmed)
+            } catch (_: Throwable) {
+                continue
+            }
+            val entry = obj.optJSONArray("entries")?.let { entries ->
+                (0 until entries.length()).mapNotNull { entries.optJSONObject(it) }
+                    .firstOrNull { (it.optJSONArray("formats")?.length() ?: 0) > 0 }
+            } ?: obj
+            if ((entry.optJSONArray("formats")?.length() ?: 0) > 0) return entry
+            if (first == null) first = entry
+        }
+        // single direct-URL results may carry only a top-level "url"
+        return first?.takeIf { it.has("url") }
     }
 
     private fun attachProxyToRequest(request: YoutubeDLRequest, currentProxy: Proxy) {

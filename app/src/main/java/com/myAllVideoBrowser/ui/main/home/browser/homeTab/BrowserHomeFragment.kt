@@ -191,5 +191,7 @@ class BrowserHomeFragment : BaseWebTabFragment() {
 
     override fun shareWebLink() {}
 
+    override fun analyzeWithYtDlp() {}
+
     override fun bookmarkCurrentUrl() {}
 }

@@ -186,6 +186,12 @@ open class VideoDetectionTabViewModel @Inject constructor(
         }
     }
 
+    /** Manually runs yt-dlp on [url], regardless of the "find video by URL" setting. */
+    fun analyzeWithYtDlp(url: String, userAgentString: String) {
+        val req = getRequestWithHeadersForUrl(url, url, userAgentString)?.build() ?: return
+        startVerifyProcess(req, isM3u8 = false, isMpd = false)
+    }
+
     override fun hasCheckLoadingsRegular(): ObservableBoolean {
         return hasCheckLoadingsRegular
     }

@@ -211,6 +211,19 @@ class WebTabFragment : BaseWebTabFragment() {
         }
     }
 
+    override fun analyzeWithYtDlp() {
+        val url = webTab.getWebView()?.url
+        if (url != null && url.startsWith("http")) {
+            Toast.makeText(
+                requireContext(), R.string.analyze_with_ytdlp_started, Toast.LENGTH_SHORT
+            ).show()
+            val userAgent = tabViewModel.userAgent.get() ?: BrowserFragment.MOBILE_USER_AGENT
+            videoDetectionTabViewModel.viewModelScope.launch(videoDetectionTabViewModel.executorReload) {
+                videoDetectionTabViewModel.analyzeWithYtDlp(url, userAgent)
+            }
+        }
+    }
+
     override fun bookmarkCurrentUrl() {
         val webview = webTab.getWebView()
         val url = webview?.url

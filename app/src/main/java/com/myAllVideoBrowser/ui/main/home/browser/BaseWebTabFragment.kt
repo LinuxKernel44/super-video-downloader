@@ -133,6 +133,8 @@ abstract class BaseWebTabFragment : BaseFragment() {
 
     abstract fun shareWebLink()
 
+    abstract fun analyzeWithYtDlp()
+
     abstract fun bookmarkCurrentUrl()
 
     fun buildWebTabMenu(browserMenu: View, isHomeTab: Boolean) {
@@ -143,6 +145,7 @@ abstract class BaseWebTabFragment : BaseFragment() {
 
             menu.findItem(R.id.bookmark).isVisible = !isHomeTab
             menu.findItem(R.id.share_link).isVisible = !isHomeTab
+            menu.findItem(R.id.analyze_with_ytdlp).isVisible = !isHomeTab
 
             menu.findItem(R.id.adblock_toggle).isChecked =
                 mainActivity.settingsViewModel.isAdBlockOn.get()
@@ -198,6 +201,11 @@ abstract class BaseWebTabFragment : BaseFragment() {
             when (menuItem.itemId) {
                 R.id.share_link -> {
                     shareWebLink()
+                    true
+                }
+
+                R.id.analyze_with_ytdlp -> {
+                    analyzeWithYtDlp()
                     true
                 }
 
